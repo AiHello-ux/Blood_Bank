@@ -10,6 +10,7 @@ blood_bank_logic.py.
 from datetime import date
 
 import blood_bank_logic as logic
+import storage
 
 
 GROUP_ORDER = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
@@ -171,13 +172,13 @@ def print_wasted_report(report, stock):
 
 def main():
     """Run the session loop: expire units, show table/menu, dispatch, repeat until Exit."""
-    # Step 1 (Program Flow): Start empty. Nothing in stock, nothing pending,
-    # no plan yet, and every running total starts at zero.
-    stock = []
+    # Step 1 (Program Flow): Stock is loaded from stock.csv, so it survives
+    # between runs. Everything else still starts empty/zero each session.
+    stock = storage.load_stock()
     pending_requests = []
     current_plan = None
     session_log = logic.new_session_log()
-    unit_counter = 1       # next unit gets ID "U001", then "U002", etc.
+    unit_counter = storage.next_unit_counter(stock)   # continues from the highest id in the file
     request_counter = 1    # next request gets ID "R001", then "R002", etc.
 
     while True:
@@ -202,6 +203,7 @@ def main():
 
             joined = ", ".join(parts)
             print("[" + str(len(wasted)) + " " + word + " expired and discarded: " + joined + "]")
+            storage.save_stock(stock)   # persist the new Wasted statuses
 
         # Step 3: Show the stock table and menu.
         print("")
@@ -259,6 +261,8 @@ def main():
                 stock = logic.add_unit(stock, unit_id, group, expiry, today)
                 unit_counter = unit_counter + 1
                 print("Added: " + unit_id + " " + group + " (exp " + expiry + ")")
+
+            storage.save_stock(stock)
 
         elif choice == 2:
             # --- Submit request (FR 3) ---
@@ -331,6 +335,7 @@ def main():
                         print_bill(allocation)
                         if allocation["status"] == "Fulfilled":
                             stock = logic.issue_units(stock, allocation["unit_ids"])
+                            storage.save_stock(stock)
                             session_log["revenue"] = session_log["revenue"] + allocation["total"]
                             session_log["fulfilled"] = session_log["fulfilled"] + 1
                         else:
@@ -371,6 +376,7 @@ def main():
             else:
                 # Plan is still good -- commit it for real.
                 stock, session_log = logic.apply_plan(stock, current_plan, session_log)
+                storage.save_stock(stock)
 
                 # Remove every request the plan just confirmed from the
                 # pending queue, since they're no longer waiting.
